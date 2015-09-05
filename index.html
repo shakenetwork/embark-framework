@@ -50,8 +50,10 @@
 
 <ul class="list">
 <li>Automatically deploy contracts and make them available in your JS code. Embark watches for changes, and if you update a contract, Embark will automatically redeploy the contracts (if needed) and the dapp.</li>
+<li>/Users/iurimatias/Projects/embark-framework.</li>
 <li>Do Test Driven Development with Contracts using Javascript.</li>
 <li>Easily deploy to & use decentralized systems such as IPFS.</li>
+<li>Keep track of deployed contracts, deploy only when truly needed.</li>
 <li>Quickly create advanced DApps using multiple contracts.</li>
 </ul>
 
@@ -59,7 +61,7 @@
 
           <h3><a id="installation" class="anchor" href="#installation" aria-hidden="true"><span class="octicon octicon-link"></span></a>Installation</h3>
 
-          <p>Requirements: <a href="https://github.com/ethereum/go-ethereum/wiki/Building-Ethereum">geth (0.9.32)</a> (warning: 0.9.34 currently not supported), <a href="https://github.com/ethereum/cpp-ethereum/wiki/Installing-clients">solc (0.9.23)</a>, <a href="https://nodejs.org/">node (0.12.2)</a> and npm</p>
+          <p>Requirements: <a href="https://github.com/ethereum/go-ethereum/wiki/Building-Ethereum">geth (1.1.0)</a>, <a href="https://github.com/ethereum/cpp-ethereum/wiki/Installing-clients">solc (0.1.0)</a> or serpent (develop), <a href="https://nodejs.org/">node (0.12.2)</a> and npm</p>
 
 <p>For specs: pyethereum, ethertdd.py</p>
 
@@ -84,6 +86,7 @@ $ cd embark_demo</code></pre>
 
 <p>This will automatically deploy the contracts, update their JS bindings and deploy your DApp to a local server at http://localhost:8000</p>
 <p>Note that if you update your code it will automatically be re-deployed, contracts included. There is no need to restart embark, refreshing the page on the browser will do.</p>
+<p>note: for a demo using meteor do <em>embark meteor_demo</em> followed by <em>embark deploy</em> then <em>meteor</em></p>
 
 <h3>
 <a id="create-dapp" class="anchor" href="#create-dapp" aria-hidden="true"><span class="octicon octicon-link"></span></a>Creating a new DApp</h3>
@@ -95,7 +98,7 @@ $ cd AppName</code></pre>
 <a id="structure" class="anchor" href="#blockchains" aria-hidden="true"><span class="octicon octicon-link"></span></a>DApp Structure</h3>
 
 <pre><code>  app/
-    |___ contracts/ #solidity contracts
+    |___ contracts/ #solidity or serpent contracts
     |___ html/
     |___ css/
     |___ js/
@@ -168,6 +171,75 @@ development:
 ...
 </code></pre>
 
+
+<p>If you are using multiple contracts, you can pass a reference to another contract as $ContractName, Embark will automatically replace this with the correct address for the contract.</p>
+
+<pre><code># config/contracts.yml
+development:
+  SimpleStorage:
+    args:
+      - 100
+      - $MyStorage
+  MyStorage:
+      args:
+        - "initial string"
+  MyMainContract:
+    args:
+      - $SimpleStorage
+...
+</code></pre>
+
+<p>You can now deploy many instances of the same contract. e.g</p>
+
+<pre><code># config/contracts.yml
+development:
+  Currency:
+    deploy: false
+    args:
+      - 100
+  Usd:
+    instanceOf: Currency
+    args:
+      - "initial string"
+  MyCoin:
+    instanceOf: Currency
+    args:
+      - $SimpleStorage
+...
+</code></pre>
+
+<p>Contracts addresses can be defined, If an address is defined the contract wouldn't be deployed but its defined address will be used instead.</p>
+
+<pre><code># config/contracts.yml
+development:
+    UserStorage:
+      address: 0x123456
+    UserManagement:
+       args:
+         - $UserStorage
+  ...
+</code></pre>
+
+<p>You can also define contract interfaces (Stubs) and actions to do on deployment</p>
+
+<pre><code># config/contracts.yml
+development:
+  DataSource:
+    args:
+  MyDataSource:
+    args:
+    instanceOf: DataSource
+  Manager:
+    stubs:
+      - DataSource
+    args:
+      - $MyDataSource
+    onDeploy:
+      - Manager.updateStorage($MyDataSource)
+      - MyDataSource.set(5)
+...
+</code></pre>
+
 <h3>
 <a id="tests" class="anchor" href="#tests" aria-hidden="true"><span class="octicon octicon-link"></span></a>Tests</h3>
 
@@ -176,7 +248,15 @@ development:
 <p>Embark includes a testing lib to fastly run & test your contracts in a EVM.</p>
 
 <pre><code># spec/contracts/simple_storage_spec.js
-EmbarkSpec = require('embark-framework').Tests;
+Embark = require('embark-framework');
+Embark.init();
+Embark.blockchainConfig.loadConfigFile('config/blockchain.yml');
+Embark.contractsConfig.loadConfigFile('config/contracts.yml');
+
+var files = ['app/contracts/simpleStorage.sol'];
+Embark.contractsConfig.init(files, 'development');
+
+var EmbarkSpec = Embark.tests(files);
 
 describe("SimpleStorage", function() {
   beforeAll(function() {
@@ -232,6 +312,24 @@ $ embark run staging</code></pre>
 <pre><code>$ embark deploy privatenet</code></pre>
 
 <p><strong>embark deploy</strong> will deploy all contracts at <em>app/contracts</em> and return the resulting addresses</p>
+
+<h3>
+<a id="structure" class="anchor" href="#structure" aria-hidden="true"><span class="octicon octicon-link"></span></a>Structuring Application</h3>
+
+<p>Embark is quite flexible and you can configure you're own directory structure using embark.yml</p>
+
+<pre><code># embark.yml
+  type: "manual" #other options: meteor, grunt
+  contracts: ["app/contracts/**/*.sol", "app/contracts/**/*.se"] # contracts files
+  output: "src/embark.js" # resulting javascript interface
+  blockchainConfig: "config/blockchain.yml" # blockchain config
+  contractsConfig: "config/contracts.yml" # contracts config
+</code></pre>
+
+<h3>
+<a id="ipfs" class="anchor" href="#ipfs" aria-hidden="true"><span class="octicon octicon-link"></span></a>Deploying to IPFS</h3>
+
+<p>To deploy a dapp to IPFS, all you need to do is run a local IPFS node and then run embark ipfs. If you want to deploy to the live net then after configuring you account on config/blockchain.yml on the production environment then you can deploy to that chain by specifying the environment embark ipfs production.</p>
 
 <h3>
 <a id="plugin" class="anchor" href="#plugin" aria-hidden="true"><span class="octicon octicon-link"></span></a>LiveReload Plugin</h3>
